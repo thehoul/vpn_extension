@@ -135,11 +135,11 @@ class Target {
     static _parse_state(name){
         var [ok, out, err, _] = GLib.spawn_command_line_sync('nmcli connection show --active');
         if(ok && err.length == 0){
+            let state_str = decoder.decode(out);
             let lines = state_str.split('\n');
             let active = false;
             lines.forEach((line) => {
                 let tokens = line.split(/\s+/);
-                console.log(tokens);
                 if(tokens[0] == name){
                     active = true;
                 }
@@ -147,6 +147,7 @@ class Target {
             return active;
         } else {
             Indicator.report_error("Couldn't verify connection state", decoder.decode(err));
+            return false;
         }
     }
 
@@ -170,10 +171,9 @@ class Target {
 
     check_state(){
         if(this == null){
-            console.log("This is null");
             return true;
         }
-        let state = Target._parse_state();
+        let state = Target._parse_state(this.name);
         if(this._update_state(state)){
             Indicator.report_info("Connection state updated", `The state of the connection ${this.target} changed unexpectedly to ${state}`);
         }
@@ -236,7 +236,6 @@ class Extension {
 
             let targets = [];
             devices.forEach((dev) => targets.push(new Target(dev)));
-            console.log(`Found ${devices.length} connections`);
             return targets;
         }
         
