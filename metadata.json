@@ -1,0 +1,8 @@
+{
+  "name": "VPNExt",
+  "description": "Connect to my VPN",
+  "uuid": "theo@houle.pro",
+  "shell-version": [
+    "42"
+  ]
+}
