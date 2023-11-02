@@ -46,10 +46,6 @@ const disconnected_icon = new St.Icon({
 });
 
 const base_cmd = 'nmcli connection'
-<<<<<<< Updated upstream
-const target = 'vipiN'
-=======
->>>>>>> Stashed changes
 
 
 const Indicator = GObject.registerClass(
@@ -73,7 +69,7 @@ class Indicator extends PanelMenu.Button {
     }
 
     toggle_connect(target){
-        let cmd = base_cmd + " " + (this.connected?'down':'up') + " " + target
+        let cmd = base_cmd + " " + (this.connected?'down':'up') + " " + this.target;
         var [ok, out, err, _] = GLib.spawn_command_line_sync(cmd);
         console.log(ok, out.toString(), err.toString());
         console.log("Connected:", this.connected);
