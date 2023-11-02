@@ -21,6 +21,8 @@
 const GETTEXT_DOMAIN = 'my-indicator-extension';
 
 const { GObject, St } = imports.gi;
+const Gio = imports.gi.Gio;
+const Me = imports.misc.extensionUtils.getCurrentExtension();
 
 const GLib = imports.gi.GLib;
 
@@ -32,48 +34,70 @@ const PopupMenu = imports.ui.popupMenu;
 const _ = ExtensionUtils.gettext;
 
 const connected_icon = new St.Icon({
-    icon_name: 'vpn_connected',
+    //icon_name: 'vpn_connected',
+    gicon: Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_connected.svg'),
     style_class: 'system-status-icon',
 });
 
 const disconnected_icon = new St.Icon({
-    icon_name: 'vpn_disconnected',
+    //icon_name: 'vpn_disconnected',
+    gicon: Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_disconnected.svg'),
     style_class: 'system-status-icon',
 });
 
-let connected = false;
+const base_cmd = 'nmcli connection'
+const target = 'vipiN'
+
 
 const Indicator = GObject.registerClass(
 class Indicator extends PanelMenu.Button {
 
+
     _init() {
         super._init(0.0, _('My Shiny Indicator'));
+
+        this.connected = false;
 
         this.add_child(disconnected_icon);
 
         let item = new PopupMenu.PopupMenuItem(_('Connect to vipiN'));
         item.connect('activate', () => {
-            if (connected){
-                var [ok, out, err, exit] = GLib.spawn_command_line_sync('nmcli connection down vipiN');
-                if (ok) {
-                    this.remove_child(connected_icon);
-                    this.add_child(disconnected_icon);
-                    connected = false;
-                    item.set_text("Disconnect from vipiN")
-                }
-            } else {
-                var [ok, out, err, exit] = GLib.spawn_command_line_sync('nmcli connection up vipiN');
-                if (ok) {
-                    this.remove_child(disconnected_icon);
-                    this.add_child(connected_icon);
-                    connected = true;
-                    item.set_text("Connect to vipiN")
-                }
-            }
+            this.toggle_connect(target);
         });
+
         this.menu.addMenuItem(item);
     }
+
+    toggle_connect(target){
+        let cmd = base_cmd + " " + (this.connected?'down':'up') + " " + target
+        var [ok, out, err, _] = GLib.spawn_command_line_sync(cmd);
+        console.log(ok, out.toString(), err.toString());
+        console.log("Connected:", this.connected);
+
+        if(out.length == 0 && err.length > 0){
+            this.report_error(err.toString());
+        } else {
+            this.toggle_connect();
+            this.connected = !this.connected;
+        }
+    }
+
+    report_error(err_str){
+        Main.notifyError("Couldn't establish VPN connection", err_str);
+    }
+
+    toggle_icon(){
+        if(this.connected){
+            this.remove_child(connected_icon);
+            this.add_child(disconnected_icon);
+        } else {
+            this.remove_child(disconnected_icon);
+            this.add_child(connected_icon);
+        }
+    }
 });
+
+
 
 class Extension {
     constructor(uuid) {

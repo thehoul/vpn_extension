@@ -1,7 +1,7 @@
 {
   "name": "VPNExt",
   "description": "Connect to my VPN",
-  "uuid": "theo@houle.pro",
+  "uuid": "vpn_extension@thehoul.pro",
   "shell-version": [
     "42"
   ]
