@@ -127,23 +127,22 @@ class Indicator extends PanelMenu.Button {
     _update_icon(){
         this.remove_all_children();
         if(this.connected){
-            this.add_child(disconnected_icon);
-        } else {
             this.add_child(connected_icon);
+        } else {
+            this.add_child(disconnected_icon);
         }
     }
 
     _parse_state(state_str){
         let lines = state_str.split('\n');
-        console.log(state_str);
+        let found = false;
         lines.forEach((line) => {
-            let tokens = line.split('\t');
+            let tokens = line.split(' ');
             if(tokens[0] == this.target){
-                return true;
+                found = true;
             }
         });
-        // If the loop didn't return then the connection wasn't active and thus return false
-        return false;
+        return found;
     }
 
     check_state(){
