@@ -46,17 +46,21 @@ const disconnected_icon = new St.Icon({
 });
 
 const base_cmd = 'nmcli connection'
+<<<<<<< Updated upstream
 const target = 'vipiN'
+=======
+>>>>>>> Stashed changes
 
 
 const Indicator = GObject.registerClass(
 class Indicator extends PanelMenu.Button {
 
 
-    _init() {
+    _init(target) {
         super._init(0.0, _('My Shiny Indicator'));
 
         this.connected = false;
+        this.target = target;
 
         this.add_child(disconnected_icon);
 
@@ -108,7 +112,7 @@ class Extension {
     }
 
     enable() {
-        this._indicator = new Indicator();
+        this._indicator = new Indicator('vipiN');
         Main.panel.addToStatusArea(this._uuid, this._indicator);
     }
 
