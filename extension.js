@@ -45,6 +45,9 @@ const disconnected_icon = new St.Icon({
     style_class: 'system-status-icon',
 });
 
+// Use to create a string from a ByteArray
+const decoder = new TextDecoder();
+
 const base_cmd = 'nmcli connection'
 
 let timeout;
@@ -84,7 +87,7 @@ class Indicator extends PanelMenu.Button {
         // Check if the cmd worked
         if(out.length == 0 && err.length > 0){
             // Didn't work so report the error we got and do nothing else
-            Indicator.report_error("Couldn't toggle VPN connection", Uint8Array.toString(err));
+            Indicator.report_error("Couldn't toggle VPN connection", decoder.decode(err));
         } else {
             this._update_state(!this.connected);
         }
@@ -131,9 +134,10 @@ class Indicator extends PanelMenu.Button {
     }
 
     _parse_state(state_str){
-        let lines = state_str.split("\n");
+        let lines = state_str.split('\n');
+        console.log(state_str);
         lines.forEach((line) => {
-            let tokens = line.split("\t");
+            let tokens = line.split('\t');
             if(tokens[0] == this.target){
                 return true;
             }
@@ -149,13 +153,13 @@ class Indicator extends PanelMenu.Button {
         }
         var [ok, out, err, _] = GLib.spawn_command_line_sync('nmcli connection show --active');
         if(ok && err.length == 0){
-            let state = this._parse_state(Uint8Array.toString(out));
+            let state = this._parse_state(decoder.decode(out));
             console.log(`Current state of connection ${this.target} is ${state}`);
             if(this._update_state(state)){
-                Indicator.report_info("Connection state updated", `The state of the connection ${target} changed unexpectedly to ${state}`);
+                Indicator.report_info("Connection state updated", `The state of the connection ${this.target} changed unexpectedly to ${state}`);
             }
         } else {
-            Indicator.report_error("Couldn't verify connection state", Uint8Array.toString(err));
+            Indicator.report_error("Couldn't verify connection state", decoder.decode(err));
         }
         return true;
     }
