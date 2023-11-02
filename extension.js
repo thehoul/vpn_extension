@@ -137,7 +137,8 @@ class Indicator extends PanelMenu.Button {
         let lines = state_str.split('\n');
         let found = false;
         lines.forEach((line) => {
-            let tokens = line.split(' ');
+            let tokens = line.split(/\s+/);
+            console.log(tokens);
             if(tokens[0] == this.target){
                 found = true;
             }
@@ -173,7 +174,7 @@ class Extension {
     }
 
     enable() {
-        this._indicators = [new Indicator('vipiN')];
+        this._indicators = Extension._find_connections();
         this._indicators.forEach((ind) => Main.panel.addToStatusArea(this._uuid, ind));
     }
 
@@ -191,11 +192,34 @@ class Extension {
         this._indicators.forEach((ind) => ind.check_state());
         return true;
     }
+
+    static _find_connections(){
+        var [ok, out, err, _] = GLib.spawn_command_line_sync('nmcli connection show');
+        if(ok && err.length == 0){
+            let devices = [];
+            let out_str = decoder.decode(out);
+            let lines = out_str.split("\n");
+            lines.forEach((line) => {
+                let tokens = line.split(/\s+/);
+                if (tokens[2] == 'wireguard'){
+                    devices.push(tokens[0]);
+                }
+            })
+
+            let indicators = [];
+            devices.forEach((dev) => indicators.push(new Indicator(dev)));
+            console.log(`Found ${devices.length} connections`);
+            return indicators;
+        }
+        
+        console.log("Couldn't fetch devices: ", decoder.decode(err));
+        return null;
+    }
 }
 
 function init(meta) {
     let extension = new Extension(meta.uuid);
     this.timeout = Mainloop.timeout_add_seconds(5.0, () => extension.check_states());
-
+    
     return extension;
 }
