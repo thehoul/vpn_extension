@@ -51,7 +51,10 @@ const base_cmd = 'nmcli connection'
 const Indicator = GObject.registerClass(
 class Indicator extends PanelMenu.Button {
 
-
+    /**
+     * 
+     * @param {string} target Name of the target VPN connection
+     */
     _init(target) {
         super._init(0.0, _('My Shiny Indicator'));
 
@@ -68,6 +71,10 @@ class Indicator extends PanelMenu.Button {
         this.menu.addMenuItem(item);
     }
 
+    /**
+     * Set the connection of the given target to up if down or to down if up
+     * @param {string} target name of the target connection to toggle
+     */
     toggle_connect(target){
         let cmd = base_cmd + " " + (this.connected?'down':'up') + " " + this.target;
         console.log(cmd);
@@ -75,24 +82,33 @@ class Indicator extends PanelMenu.Button {
         console.log(ok, out.toString(), err.toString());
         console.log("Connected:", this.connected);
 
+        // Check if the cmd worked
         if(out.length == 0 && err.length > 0){
+            // Didn't work so report the error we got and do nothing else
             this.report_error(err.toString());
         } else {
-            this.toggle_icon();
             this.connected = !this.connected;
+            this.update_icon();
         }
     }
 
+    /**
+     * Show an error notification containing the given error text.
+     * @param {string} err_str Error string representation
+     */    
     report_error(err_str){
-        Main.notifyError("Couldn't establish VPN connection", err_str);
+        let title = this.connected?"Couldn't disconnect from the VPN":"Couldn't connect to the VPN";
+        Main.notifyError(title, err_str);
     }
 
-    toggle_icon(){
+    /**
+     * Modify icon to match the current state of the connection
+     */
+    update_icon(){
+        this.remove_all_children();
         if(this.connected){
-            this.remove_child(connected_icon);
             this.add_child(disconnected_icon);
         } else {
-            this.remove_child(disconnected_icon);
             this.add_child(connected_icon);
         }
     }
