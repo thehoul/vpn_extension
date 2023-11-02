@@ -57,40 +57,31 @@ class Indicator extends PanelMenu.Button {
 
     /**
      * 
-     * @param {string} target Name of the target VPN connection
+     * @param {string} targets Name of the targets VPN connections
      */
-    _init(target) {
+    _init(targets) {
         super._init(0.0, _('My Shiny Indicator'));
 
         this.connected = false;
-        this.target = target;
+        this.targets = targets;
 
         this.add_child(disconnected_icon);
 
-        let item = new PopupMenu.PopupMenuItem(_('Connect to vipiN'));
-        item.connect('activate', () => {
-            this._toggle_connect(target);
-        });
-
-        this.menu.addMenuItem(item);
-    }
-
-    /**
-     * Set the connection of the given target to up if down or to down if up
-     * @param {string} target name of the target connection to toggle
-     */
-    _toggle_connect(target){
-        let cmd = base_cmd + " " + (this.connected?'down':'up') + " " + this.target;
-        console.log(cmd);
-        var [ok, out, err, _] = GLib.spawn_command_line_sync(cmd);
-
-        // Check if the cmd worked
-        if(out.length == 0 && err.length > 0){
-            // Didn't work so report the error we got and do nothing else
-            Indicator.report_error("Couldn't toggle VPN connection", decoder.decode(err));
-        } else {
-            this._update_state(!this.connected);
+        if(targets.length == 0){
+            let item = new PopupMenu.PopupMenuItem(_(`No devices available`));
+            this.menu.addMenuItem(item);
         }
+
+        targets.forEach((target) => {
+            let item = new PopupMenu.PopupMenuItem(_(`Connect to ${target.name}`));
+            item.connect('activate', () => {
+                target._toggle_connect();
+            });
+            this.menu.addMenuItem(item);
+        })
+
+
+
     }
 
     /**
@@ -108,20 +99,6 @@ class Indicator extends PanelMenu.Button {
     }
 
     /**
-     * Update the connection state to be the one given. This takes care of updating everything needed in the object (for instace the icon)
-     * @param {boolean} new_state new state connetion state (true = connected, false = disconnected)
-     * @returns {boolean} true if the state was update and false if the given state is already the current one
-     */
-    _update_state(new_state){
-        if(this.connected == new_state){
-            return false;
-        }
-        this.connected = new_state;
-        this._update_icon();
-        return true;
-    }
-
-    /**
      * Modify icon to match the current state of the connection
      */
     _update_icon(){
@@ -133,17 +110,62 @@ class Indicator extends PanelMenu.Button {
         }
     }
 
-    _parse_state(state_str){
-        let lines = state_str.split('\n');
-        let found = false;
-        lines.forEach((line) => {
-            let tokens = line.split(/\s+/);
-            console.log(tokens);
-            if(tokens[0] == this.target){
-                found = true;
+    update_connected(){
+        this.connected = false;
+        this.targets.forEach((target) => {
+            if(target.state){
+                this.connected = true;
             }
-        });
-        return found;
+        })
+    }
+
+    check_states(){
+        this.targets.forEach((target) => target.check_state());
+        this.update_connected();
+        this._update_icon();
+    }
+});
+
+class Target {
+    constructor(name){
+        this.name = name;
+        this.state = Target._parse_state(this.name);
+    }
+
+    static _parse_state(name){
+        var [ok, out, err, _] = GLib.spawn_command_line_sync('nmcli connection show --active');
+        if(ok && err.length == 0){
+            let lines = state_str.split('\n');
+            let active = false;
+            lines.forEach((line) => {
+                let tokens = line.split(/\s+/);
+                console.log(tokens);
+                if(tokens[0] == name){
+                    active = true;
+                }
+            });
+            return active;
+        } else {
+            Indicator.report_error("Couldn't verify connection state", decoder.decode(err));
+        }
+    }
+
+    /**
+     * Set the connection of the given target to up if down or to down if up
+     * @param {string} target name of the target connection to toggle
+     */
+    _toggle_connect(){
+        let cmd = base_cmd + " " + (this.state?'down':'up') + " " + this.name;
+        console.log(cmd);
+        var [_, out, err, _] = GLib.spawn_command_line_sync(cmd);
+
+        // Check if the cmd worked
+        if(out.length == 0 && err.length > 0){
+            // Didn't work so report the error we got and do nothing else
+            Indicator.report_error("Couldn't toggle VPN connection", decoder.decode(err));
+        } else {
+            this._update_state(!this.state);
+        }
     }
 
     check_state(){
@@ -151,20 +173,26 @@ class Indicator extends PanelMenu.Button {
             console.log("This is null");
             return true;
         }
-        var [ok, out, err, _] = GLib.spawn_command_line_sync('nmcli connection show --active');
-        if(ok && err.length == 0){
-            let state = this._parse_state(decoder.decode(out));
-            console.log(`Current state of connection ${this.target} is ${state}`);
-            if(this._update_state(state)){
-                Indicator.report_info("Connection state updated", `The state of the connection ${this.target} changed unexpectedly to ${state}`);
-            }
-        } else {
-            Indicator.report_error("Couldn't verify connection state", decoder.decode(err));
+        let state = Target._parse_state();
+        if(this._update_state(state)){
+            Indicator.report_info("Connection state updated", `The state of the connection ${this.target} changed unexpectedly to ${state}`);
         }
         return true;
     }
-});
 
+    /**
+     * Update the connection state to be the one given. This takes care of updating everything needed in the object (for instace the icon)
+     * @param {boolean} new_state new state connetion state (true = connected, false = disconnected)
+     * @returns {boolean} true if the state was update and false if the given state is already the current one
+     */
+    _update_state(new_state){
+        if(this.state == new_state){
+            return false;
+        }
+        this.state = new_state;
+        return true;
+    }
+}
 class Extension {
     constructor(uuid) {
         this._uuid = uuid;
@@ -174,8 +202,8 @@ class Extension {
     }
 
     enable() {
-        this._indicators = Extension._find_connections();
-        this._indicators.forEach((ind) => Main.panel.addToStatusArea(this._uuid, ind));
+        this._indicator = new Indicator(Extension._find_connections());
+        Main.panel.addToStatusArea(this._uuid, this._indicator);
     }
 
     disable() {
@@ -189,7 +217,7 @@ class Extension {
     }
 
     check_states(){
-        this._indicators.forEach((ind) => ind.check_state());
+        this._indicator.check_states();
         return true;
     }
 
@@ -206,10 +234,10 @@ class Extension {
                 }
             })
 
-            let indicators = [];
-            devices.forEach((dev) => indicators.push(new Indicator(dev)));
+            let targets = [];
+            devices.forEach((dev) => targets.push(new Target(dev)));
             console.log(`Found ${devices.length} connections`);
-            return indicators;
+            return targets;
         }
         
         console.log("Couldn't fetch devices: ", decoder.decode(err));
