@@ -70,6 +70,7 @@ class Indicator extends PanelMenu.Button {
 
     toggle_connect(target){
         let cmd = base_cmd + " " + (this.connected?'down':'up') + " " + this.target;
+        console.log(cmd);
         var [ok, out, err, _] = GLib.spawn_command_line_sync(cmd);
         console.log(ok, out.toString(), err.toString());
         console.log("Connected:", this.connected);
@@ -77,7 +78,7 @@ class Indicator extends PanelMenu.Button {
         if(out.length == 0 && err.length > 0){
             this.report_error(err.toString());
         } else {
-            this.toggle_connect();
+            this.toggle_icon();
             this.connected = !this.connected;
         }
     }
