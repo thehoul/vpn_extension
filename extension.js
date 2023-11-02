@@ -84,7 +84,7 @@ class Indicator extends PanelMenu.Button {
         // Check if the cmd worked
         if(out.length == 0 && err.length > 0){
             // Didn't work so report the error we got and do nothing else
-            Indicator.report_error("Couldn't toggle VPN connection", err.toString());
+            Indicator.report_error("Couldn't toggle VPN connection", Uint8Array.toString(err));
         } else {
             this._update_state(!this.connected);
         }
@@ -131,9 +131,9 @@ class Indicator extends PanelMenu.Button {
     }
 
     _parse_state(state_str){
-        lines = state_str.split("\n");
+        let lines = state_str.split("\n");
         lines.forEach((line) => {
-            tokens = line.split("\t");
+            let tokens = line.split("\t");
             if(tokens[0] == this.target){
                 return true;
             }
@@ -143,19 +143,23 @@ class Indicator extends PanelMenu.Button {
     }
 
     check_state(){
+        if(this == null){
+            console.log("This is null");
+            return true;
+        }
         var [ok, out, err, _] = GLib.spawn_command_line_sync('nmcli connection show --active');
         if(ok && err.length == 0){
-            let state = this._parse_state(out.toString());
+            let state = this._parse_state(Uint8Array.toString(out));
+            console.log(`Current state of connection ${this.target} is ${state}`);
             if(this._update_state(state)){
-                Indicator.report_info("Connection state updated", "The state of the connection ${target} changed unexpectedly to ${state}");
+                Indicator.report_info("Connection state updated", `The state of the connection ${target} changed unexpectedly to ${state}`);
             }
         } else {
-            Indicator.report_error("Couldn't verify connection state", err.toString());
+            Indicator.report_error("Couldn't verify connection state", Uint8Array.toString(err));
         }
         return true;
     }
 });
-
 
 class Extension {
     constructor(uuid) {
@@ -166,18 +170,29 @@ class Extension {
     }
 
     enable() {
-        this._indicator = new Indicator('vipiN');
-        Main.panel.addToStatusArea(this._uuid, this._indicator);
-        timeout = Mainloop.timeout_add_seconds(5.0, this._indicator.check_state);
+        this._indicators = [new Indicator('vipiN')];
+        this._indicators.forEach((ind) => Main.panel.addToStatusArea(this._uuid, ind));
     }
 
     disable() {
         this._indicator.destroy();
         this._indicator = null;
-        Mainloop.source_remove(timeout);
+        Mainloop.source_remove(this.timeout);
+    }
+
+    set_timeout(timeout){
+        this.timeout = timeout;
+    }
+
+    check_states(){
+        this._indicators.forEach((ind) => ind.check_state());
+        return true;
     }
 }
 
 function init(meta) {
-    return new Extension(meta.uuid);
+    let extension = new Extension(meta.uuid);
+    this.timeout = Mainloop.timeout_add_seconds(5.0, () => extension.check_states());
+
+    return extension;
 }
