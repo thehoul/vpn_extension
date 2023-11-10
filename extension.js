@@ -4,9 +4,6 @@ const Me = imports.misc.extensionUtils.getCurrentExtension();
 const PanelMenu = imports.ui.panelMenu;
 const Mainloop = imports.mainloop;
 
-const Helpers = Me.imports.helpers;
-const StatusIcon = Me.imports.statusIcon;
-
 const CONNECTED_ICON    = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_connected.svg');
 const DISCONNECTED_ICON = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_disconnected.svg');
 
@@ -20,7 +17,7 @@ class Indicator extends PanelMenu.Button {
         this.target = target;
         this.connected = this._parse_state();
 
-        this._icon = new StatusIcon.StatusIcon(this.connected);
+        this._icon = new StatusIcon(this.connected);
 
         this.add_child(this._icon);
 
@@ -35,7 +32,7 @@ class Indicator extends PanelMenu.Button {
 
         // Run the command to toggle the connection to the invert of the current one
         let cmd = `nmcli connection ${!this.connected?"up":"down"} ${this.target}`;
-        let [ok, _] = Helpers.invoke_cmd(cmd);
+        let [ok, _] = invoke_cmd(cmd);
         // Check that the command worked, if not stop the event
         if(!ok){
             return Clutter.EVENT_STOP;
@@ -68,7 +65,7 @@ class Indicator extends PanelMenu.Button {
     }
 
     _parse_state(){
-        let [ok, out] = Helpers.invoke_cmd(`nmcli -g GENERAL.STATE c s ${this.target}`);
+        let [ok, out] = invoke_cmd(`nmcli -g GENERAL.STATE c s ${this.target}`);
         if(ok){
             if(out.length==0){
                 return false;
@@ -94,6 +91,32 @@ class Indicator extends PanelMenu.Button {
     }
 });
 
+const StatusIcon = GObject.registerClass(
+class StatusIcon extends St.Icon{
+    _init(status){
+        super._init({
+            gicon: status?CONNECTED_ICON:DISCONNECTED_ICON,
+            style_class: 'system-status-icon',
+        });
+        this.status = status;
+    }
+
+    set_status(newStatus){
+        if(newStatus != this.status){
+            this.status = newStatus;
+            this._set_icon(this.status);
+        }
+    }
+
+    toggle_icon(){
+        this.set_status(!this.status);
+    }
+
+    _set_icon(to_state){
+        super.set_gicon(to_state?CONNECTED_ICON:DISCONNECTED_ICON);
+    }
+});
+
 class Extension {
     constructor(uuid) {
         this._uuid = uuid;
@@ -109,6 +132,20 @@ class Extension {
         this._indicator.destroy();
         this._indicator = null;
         Mainloop.source_remove(this._timeout);
+    }
+}
+
+
+function invoke_cmd(cmd){
+    var [ok, out, err, _] = GLib.spawn_command_line_sync(cmd);
+
+    // Check if the cmd worked
+    if(out.length == 0 && err.length > 0 || !ok){
+        // Didn't work so report the error we got and 
+        console.log("Error running method ", decoder.decode(err));
+        return [false, decoder.decode(err)];
+    } else {
+        return [true, decoder.decode(out)];
     }
 }
 
