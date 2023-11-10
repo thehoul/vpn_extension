@@ -5,6 +5,7 @@ const PanelMenu = imports.ui.panelMenu;
 const Mainloop = imports.mainloop;
 
 const Helpers = Me.imports.helpers;
+const StatusIcon = Me.imports.statusIcon;
 
 const CONNECTED_ICON    = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_connected.svg');
 const DISCONNECTED_ICON = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_disconnected.svg');
@@ -19,10 +20,7 @@ class Indicator extends PanelMenu.Button {
         this.target = target;
         this.connected = this._parse_state();
 
-        this._icon = new St.Icon({
-            gicon: this.connected?CONNECTED_ICON:DISCONNECTED_ICON,
-            style_class: 'system-status-icon',
-        });
+        this._icon = new StatusIcon.StatusIcon(this.connected);
 
         this.add_child(this._icon);
 
@@ -51,13 +49,9 @@ class Indicator extends PanelMenu.Button {
     _set_state(state){
         if(state != this.connected){
             this.connected = state;
-            this._set_icon(this.connected);
+            this._icon.set_status(this.connected);
             Main.notify('Success',`Connection has been toggled to ${this.connected?"connected":"disconnected"}!`);
         }
-    }
-
-    _set_icon(to_state){
-        this._icon.set_gicon(to_state?CONNECTED_ICON:DISCONNECTED_ICON);
     }
 
     _invoke_cmd(cmd){
