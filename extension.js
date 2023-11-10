@@ -4,6 +4,8 @@ const Me = imports.misc.extensionUtils.getCurrentExtension();
 const PanelMenu = imports.ui.panelMenu;
 const Mainloop = imports.mainloop;
 
+const Helpers = Me.imports.helpers;
+
 const CONNECTED_ICON    = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_connected.svg');
 const DISCONNECTED_ICON = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_disconnected.svg');
 
@@ -35,7 +37,7 @@ class Indicator extends PanelMenu.Button {
 
         // Run the command to toggle the connection to the invert of the current one
         let cmd = `nmcli connection ${!this.connected?"up":"down"} ${this.target}`;
-        let [ok, _] = this._invoke_cmd(cmd);
+        let [ok, _] = Helpers.invoke_cmd(cmd);
         // Check that the command worked, if not stop the event
         if(!ok){
             return Clutter.EVENT_STOP;
@@ -72,7 +74,7 @@ class Indicator extends PanelMenu.Button {
     }
 
     _parse_state(){
-        let [ok, out] = this._invoke_cmd(`nmcli -g GENERAL.STATE c s ${this.target}`);
+        let [ok, out] = Helpers.invoke_cmd(`nmcli -g GENERAL.STATE c s ${this.target}`);
         if(ok){
             if(out.length==0){
                 return false;
