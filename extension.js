@@ -1,252 +1,121 @@
-/* extension.js
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- */
-
-/* exported init */
-
-const GETTEXT_DOMAIN = 'my-indicator-extension';
-
-const { GObject, St } = imports.gi;
-const Gio = imports.gi.Gio;
-const Me = imports.misc.extensionUtils.getCurrentExtension();
-const Mainloop = imports.mainloop;
-const GLib = imports.gi.GLib;
-
-const ExtensionUtils = imports.misc.extensionUtils;
+const { Clutter, GObject, St, Gio, GLib } = imports.gi;
 const Main = imports.ui.main;
+const Me = imports.misc.extensionUtils.getCurrentExtension();
 const PanelMenu = imports.ui.panelMenu;
-const PopupMenu = imports.ui.popupMenu;
+const Mainloop = imports.mainloop;
 
-const _ = ExtensionUtils.gettext;
+const CONNECTED_ICON    = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_connected.svg');
+const DISCONNECTED_ICON = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_disconnected.svg');
 
-const connected_icon = new St.Icon({
-    //icon_name: 'vpn_connected',
-    gicon: Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_connected.svg'),
-    style_class: 'system-status-icon',
-});
-
-const disconnected_icon = new St.Icon({
-    //icon_name: 'vpn_disconnected',
-    gicon: Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_disconnected.svg'),
-    style_class: 'system-status-icon',
-});
-
-// Use to create a string from a ByteArray
 const decoder = new TextDecoder();
-
-const base_cmd = 'nmcli connection'
-
-let timeout;
 
 const Indicator = GObject.registerClass(
 class Indicator extends PanelMenu.Button {
+    _init (target) {
+        super._init(0.0, 'Toggle Button');
+    
+        this.target = target;
+        this.connected = this._parse_state();
 
-    /**
-     * 
-     * @param {string} targets Name of the targets VPN connections
-     */
-    _init(targets) {
-        super._init(0.0, _('My Shiny Indicator'));
+        this._icon = new St.Icon({
+            gicon: this.connected?CONNECTED_ICON:DISCONNECTED_ICON,
+            style_class: 'system-status-icon',
+        });
 
-        this.connected = false;
-        this.targets = targets;
+        this.add_child(this._icon);
 
-        this.add_child(disconnected_icon);
+        this.connect('event', this._onClicked.bind(this));
+    }
 
-        if(targets.length == 0){
-            let item = new PopupMenu.PopupMenuItem(_(`No devices available`));
-            this.menu.addMenuItem(item);
+    _onClicked(actor, event) {
+        if ((event.type() !== Clutter.EventType.TOUCH_BEGIN && event.type() !== Clutter.EventType.BUTTON_PRESS)) {
+            // Some other non-clicky event happened; bail
+            return Clutter.EVENT_PROPAGATE;
         }
 
-        targets.forEach((target) => {
-            let item = new PopupMenu.PopupMenuItem(_(`Connect to ${target.name}`));
-            item.connect('activate', () => {
-                target._toggle_connect();
-            });
-            this.menu.addMenuItem(item);
-        })
+        // Run the command to toggle the connection to the invert of the current one
+        let cmd = `nmcli connection ${!this.connected?"up":"down"} ${this.target}`;
+        let [ok, _] = this._invoke_cmd(cmd);
+        // Check that the command worked, if not stop the event
+        if(!ok){
+            return Clutter.EVENT_STOP;
+        }
 
-
-
+        this._set_state(!this.connected);
+        
+        return Clutter.EVENT_PROPAGATE;
     }
 
-    /**
-     * Show an error notification containing the given error text.
-     * @param {string} err_str Error string representation
-     */    
-    static report_error(title, err_str){
-        Main.notifyError(title, err_str);
-        console.log(title + ": ", err_str);
+    _set_state(state){
+        if(state != this.connected){
+            this.connected = state;
+            this._set_icon(this.connected);
+            Main.notify('Success',`Connection has been toggled to ${this.connected?"connected":"disconnected"}!`);
+        }
     }
 
-    static report_info(title, message){
-        Main.notify(title, message);
-        console.log(title+": ", message);
+    _set_icon(to_state){
+        this._icon.set_gicon(to_state?CONNECTED_ICON:DISCONNECTED_ICON);
     }
 
-    /**
-     * Modify icon to match the current state of the connection
-     */
-    _update_icon(){
-        this.remove_all_children();
-        if(this.connected){
-            this.add_child(connected_icon);
+    _invoke_cmd(cmd){
+        var [ok, out, err, _] = GLib.spawn_command_line_sync(cmd);
+
+        // Check if the cmd worked
+        if(out.length == 0 && err.length > 0 || !ok){
+            // Didn't work so report the error we got and 
+            console.log("Error running method ", decoder.decode(err));
+            return [false, decoder.decode(err)];
         } else {
-            this.add_child(disconnected_icon);
+            return [true, decoder.decode(out)];
         }
     }
 
-    update_connected(){
-        this.connected = false;
-        this.targets.forEach((target) => {
-            if(target.state){
-                this.connected = true;
+    _parse_state(){
+        let [ok, out] = this._invoke_cmd(`nmcli -g GENERAL.STATE c s ${this.target}`);
+        if(ok){
+            if(out.length==0){
+                return false;
+            } else if(out.includes("activated")){
+                return true;
+            } else {
+                console.log(`Unknown connection state: ${out}`);
+                return false;
             }
-        })
+        } else {
+            console.log('error running state cmd');
+            return false;
+        }
     }
 
-    check_states(){
-        this.targets.forEach((target) => target.check_state());
-        this.update_connected();
-        this._update_icon();
+    _check_status(){
+        let status = this._parse_state();
+        if(status != this.connected){
+            Main.notify("Connection state updated", `The state of the connection ${this.target} changed unexpectedly to ${status}`);
+            this._set_state(status);
+        }
+        return true;
     }
 });
 
-class Target {
-    constructor(name){
-        this.name = name;
-        this.state = Target._parse_state(this.name);
-    }
-
-    static _parse_state(name){
-        var [ok, out, err, _] = GLib.spawn_command_line_sync('nmcli connection show --active');
-        if(ok && err.length == 0){
-            let state_str = decoder.decode(out);
-            let lines = state_str.split('\n');
-            let active = false;
-            lines.forEach((line) => {
-                let tokens = line.split(/\s+/);
-                if(tokens[0] == name){
-                    active = true;
-                }
-            });
-            return active;
-        } else {
-            Indicator.report_error("Couldn't verify connection state", decoder.decode(err));
-            return false;
-        }
-    }
-
-    /**
-     * Set the connection of the given target to up if down or to down if up
-     * @param {string} target name of the target connection to toggle
-     */
-    _toggle_connect(){
-        let cmd = base_cmd + " " + (this.state?'down':'up') + " " + this.name;
-        console.log(cmd);
-        var [_, out, err, _] = GLib.spawn_command_line_sync(cmd);
-
-        // Check if the cmd worked
-        if(out.length == 0 && err.length > 0){
-            // Didn't work so report the error we got and do nothing else
-            Indicator.report_error("Couldn't toggle VPN connection", decoder.decode(err));
-        } else {
-            this._update_state(!this.state);
-        }
-    }
-
-    check_state(){
-        if(this == null){
-            return true;
-        }
-        let state = Target._parse_state(this.name);
-        if(this._update_state(state)){
-            Indicator.report_info("Connection state updated", `The state of the connection ${this.target} changed unexpectedly to ${state}`);
-        }
-        return true;
-    }
-
-    /**
-     * Update the connection state to be the one given. This takes care of updating everything needed in the object (for instace the icon)
-     * @param {boolean} new_state new state connetion state (true = connected, false = disconnected)
-     * @returns {boolean} true if the state was update and false if the given state is already the current one
-     */
-    _update_state(new_state){
-        if(this.state == new_state){
-            return false;
-        }
-        this.state = new_state;
-        return true;
-    }
-}
 class Extension {
     constructor(uuid) {
         this._uuid = uuid;
-
-        ExtensionUtils.initTranslations(GETTEXT_DOMAIN);
-
     }
 
     enable() {
-        this._indicator = new Indicator(Extension._find_connections());
+        this._indicator = new Indicator('vipiN');
         Main.panel.addToStatusArea(this._uuid, this._indicator);
+        this._timeout = Mainloop.timeout_add_seconds(10.0, () => this._indicator._check_status());
     }
 
     disable() {
         this._indicator.destroy();
         this._indicator = null;
-        Mainloop.source_remove(this.timeout);
-    }
-
-    set_timeout(timeout){
-        this.timeout = timeout;
-    }
-
-    check_states(){
-        this._indicator.check_states();
-        return true;
-    }
-
-    static _find_connections(){
-        var [ok, out, err, _] = GLib.spawn_command_line_sync('nmcli connection show');
-        if(ok && err.length == 0){
-            let devices = [];
-            let out_str = decoder.decode(out);
-            let lines = out_str.split("\n");
-            lines.forEach((line) => {
-                let tokens = line.split(/\s+/);
-                if (tokens[2] == 'wireguard'){
-                    devices.push(tokens[0]);
-                }
-            })
-
-            let targets = [];
-            devices.forEach((dev) => targets.push(new Target(dev)));
-            return targets;
-        }
-        
-        console.log("Couldn't fetch devices: ", decoder.decode(err));
-        return null;
+        Mainloop.source_remove(this._timeout);
     }
 }
 
 function init(meta) {
-    let extension = new Extension(meta.uuid);
-    this.timeout = Mainloop.timeout_add_seconds(5.0, () => extension.check_states());
-    
-    return extension;
+    return new Extension(meta.uuid);
 }
