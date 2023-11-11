@@ -6,21 +6,17 @@ const Mainloop = imports.mainloop;
 
 const CONNECTED_ICON    = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_connected.svg');
 const DISCONNECTED_ICON = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_disconnected.svg');
+const UNKNOWN_ICON = Gio.icon_new_for_string(Me.dir.get_path() + '/icons/vpn_unknown.svg');
 
 const decoder = new TextDecoder();
 
 const Indicator = GObject.registerClass(
 class Indicator extends PanelMenu.Button {
-    _init (target) {
+    _init(targetName) {
         super._init(0.0, 'Toggle Button');
-    
-        this.target = target;
-        this.connected = this._parse_state();
-
-        this._icon = new StatusIcon(this.connected);
-
+        this._target = new Target(targetName);
+        this._icon = new StatusIcon(this._target.status);
         this.add_child(this._icon);
-
         this.connect('event', this._onClicked.bind(this));
     }
 
@@ -30,90 +26,110 @@ class Indicator extends PanelMenu.Button {
             return Clutter.EVENT_PROPAGATE;
         }
 
-        // Run the command to toggle the connection to the invert of the current one
-        let cmd = `nmcli connection ${!this.connected?"up":"down"} ${this.target}`;
-        let [ok, _] = invoke_cmd(cmd);
-        // Check that the command worked, if not stop the event
-        if(!ok){
-            return Clutter.EVENT_STOP;
-        }
+        this._target.toggle_connection();
+        this._icon.set_status(this._target.status);
 
-        this._set_state(!this.connected);
-        
         return Clutter.EVENT_PROPAGATE;
     }
 
-    _set_state(state){
-        if(state != this.connected){
-            this.connected = state;
-            this._icon.set_status(this.connected);
-            Main.notify('Success',`Connection has been toggled to ${this.connected?"connected":"disconnected"}!`);
-        }
+    _check_status(){
+        this._target.check_status();
+        console.log(`Target status ${this._target.status}`)
+        this._icon.set_status(this._target.status);
+        return true; // Keep the timeout going
+    }
+});
+ 
+const Status = {
+    CONNECTED: 'CONNECTED',
+    DISCONNECTED: 'DISCONNECTED',
+    UNKNOWN: 'UNKNOWN'
+}
+
+class Target {
+    constructor(name){
+        this.name = name;
+        this.status = this._parse_state();
     }
 
-    _invoke_cmd(cmd){
-        var [ok, out, err, _] = GLib.spawn_command_line_sync(cmd);
-
-        // Check if the cmd worked
-        if(out.length == 0 && err.length > 0 || !ok){
-            // Didn't work so report the error we got and 
-            console.log("Error running method ", decoder.decode(err));
-            return [false, decoder.decode(err)];
+    toggle_connection(){
+        if(this.status == Status.DISCONNECTED || this.status == Status.UNKNOWN){
+            let cmd = `nmcli connection up ${this.name}`;
+            let [ok, _] = invoke_cmd(cmd);
+            if(ok){
+                Main.notify('Success',`Connection to ${this.status} has been turned on!`);
+                this.status = Status.CONNECTED;
+            } else {
+                Main.notify('Error',`Connection failed!`);
+                // don't change the status
+            }
         } else {
-            return [true, decoder.decode(out)];
+            let cmd = `nmcli connection down ${this.name}`;
+            let [ok, _] = invoke_cmd(cmd);
+            if(ok){
+                Main.notify('Success',`Connection to ${this.name} has been turned off!`);
+                this.status = Status.DISCONNECTED;
+            } else {
+                Main.notify('Error',`Connection failed!`);
+                // don't change the status
+            }
         }
     }
 
     _parse_state(){
-        let [ok, out] = invoke_cmd(`nmcli -g GENERAL.STATE c s ${this.target}`);
+        console.log(`Checking state of ${this.name}`)
+        let [ok, out] = invoke_cmd(`nmcli -g GENERAL.STATE c s ${this.name}`);
         if(ok){
             if(out.length==0){
-                return false;
+                return Status.DISCONNECTED;
             } else if(out.includes("activated")){
-                return true;
+                return Status.CONNECTED;
             } else {
                 console.log(`Unknown connection state: ${out}`);
-                return false;
+                return Status.UNKNOWN;
             }
         } else {
             console.log('error running state cmd');
-            return false;
+            return Status.UNKNOWN;
         }
     }
 
-    _check_status(){
+    check_status(){
         let status = this._parse_state();
-        if(status != this.connected){
+        if(status != this.status){
+            this.status = status;
             Main.notify("Connection state updated", `The state of the connection ${this.target} changed unexpectedly to ${status}`);
-            this._set_state(status);
         }
-        return true;
+        console.log(`Connection state is ${status}`)
+        return true; // Keep the timeout going
     }
-});
+}
 
 const StatusIcon = GObject.registerClass(
 class StatusIcon extends St.Icon{
     _init(status){
         super._init({
-            gicon: status?CONNECTED_ICON:DISCONNECTED_ICON,
+            gicon: this._get_gicon(status),
             style_class: 'system-status-icon',
         });
-        this.status = status;
     }
 
-    set_status(newStatus){
-        if(newStatus != this.status){
-            this.status = newStatus;
-            this._set_icon(this.status);
+    _get_gicon(status){
+        if(status == Status.CONNECTED){
+            return CONNECTED_ICON;
+        } else if(status == Status.DISCONNECTED){
+            return DISCONNECTED_ICON;
+        } else {
+            return UNKNOWN_ICON;
         }
     }
 
-    toggle_icon(){
-        this.set_status(!this.status);
+    set_status(status){
+        this._set_icon(status);
     }
 
     _set_icon(to_state){
-        super.set_gicon(to_state?CONNECTED_ICON:DISCONNECTED_ICON);
+        super.set_gicon(this._get_gicon(to_state));
     }
 });
 
