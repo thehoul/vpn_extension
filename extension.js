@@ -57,7 +57,7 @@ class Target {
             let cmd = `nmcli connection up ${this.name}`;
             let [ok, _] = invoke_cmd(cmd);
             if(ok){
-                Main.notify('Success',`Connection to ${this.status} has been turned on!`);
+                Main.notify('Success',`Connection to ${this.name} has been turned on!`);
                 this.status = Status.CONNECTED;
             } else {
                 Main.notify('Error',`Connection failed!`);
